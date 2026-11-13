@@ -1,30 +1,7 @@
 `timescale 1ns / 1ps
-// ==============================================================================
-// mac_design.v : all RTL in one file  (compile order does not matter)
-//   mac_board_top  - top module for Nexys A7-100T
-//   mac_core       - Q8.8 pipelined signed MAC
-//   btn_cond       - synchroniser + debouncer + edge pulse
-//   seg7_mux       - 8-digit hex display driver
-// ==============================================================================
 
-//-----------------------------------------------------------------------------
-// mac_board_top : Nexys A7-100T (XC7A100T-1CSG324C) demo of the Q8.8 MAC
-//
-//   SW[15:0]    operand value, Q8.8 two's complement (signed 16-bit)
-//   BTNL        load operand A from SW
-//   BTNR        load operand B from SW
-//   BTNC        accumulate:  ACC <= ACC + A*B
-//   BTNU        clear accumulator
-//   CPU_RESETN  global reset (red button, active low)
-//   LED[15:0]   accumulator result, Q8.8, saturated
-//   7-seg       {A[15:0], B[15:0]} in hex (A = left four digits, B = right four)
-//               decimal points light when the result is saturated (overflow)
-//
-// One 100 MHz clock only; every button is synchronised, debounced and turned
-// into a one-cycle enable, so no button is ever used as a clock.
-//-----------------------------------------------------------------------------
 module mac_board_top #(
-    parameter DB_CYCLES = 1_000_000          // 10 ms debounce @ 100 MHz
+    parameter DB_CYCLES = 1_000_000      
 )(
     input  wire        CLK100MHZ,
     input  wire        CPU_RESETN,
@@ -38,7 +15,6 @@ module mac_board_top #(
     output wire [7:0]  AN
 );
 
-    // ---- buttons -----------------------------------------------------------
     wire rst_lvl, ld_a_p, ld_b_p, acc_p, clr_p;
     wire unused_rst_pulse, unused_l_lvl, unused_r_lvl, unused_c_lvl, unused_u_lvl;
 
@@ -53,7 +29,7 @@ module mac_board_top #(
     btn_cond #(.DB_CYCLES(DB_CYCLES), .ACTIVE_LOW(0))
         u_bu  (.clk(CLK100MHZ), .din(BTNU),       .level(unused_u_lvl), .pulse(clr_p));
 
-    // ---- switch synchroniser ---------------------------------------------------
+   
     (* ASYNC_REG = "TRUE" *) reg [15:0] sw_s0 = 16'd0;
     (* ASYNC_REG = "TRUE" *) reg [15:0] sw_s1 = 16'd0;
     always @(posedge CLK100MHZ) begin
@@ -61,7 +37,6 @@ module mac_board_top #(
         sw_s1 <= sw_s0;
     end
 
-    // ---- MAC ---------------------------------------------------------------------
     wire [15:0] a_q, b_q, o;
     wire        ovf;
 
@@ -82,7 +57,7 @@ module mac_board_top #(
 
     assign LED = o;
 
-    // ---- display -------------------------------------------------------------------
+
     seg7_mux u_seg (
         .clk  (CLK100MHZ),
         .value({a_q, b_q}),
@@ -93,47 +68,30 @@ module mac_board_top #(
 
 endmodule
 
-//-----------------------------------------------------------------------------
-// mac_core : parameterised signed fixed-point (Qib.fb) multiply-accumulate
-//
-//   stage 0 : operand registers a_r / b_r   (loaded by ld_a / ld_b strobes)
-//   stage 1 : product register  prod_r      (free running, maps to DSP48E1 MREG)
-//   stage 2 : accumulator       acc         (updates on acc_en strobe)
-//   stage 3 : output register   o / ovf     (round + saturate, registered)
-//
-// Single clock domain: no manual clocks, no CDC, no CLOCK_DEDICATED_ROUTE hack.
-// Synchronous reset only (maps onto FDRE / DSP48 RST pins, no async-reset
-// timing exceptions).
-//
-// Latency (clk cycles):  ld_a/ld_b -> prod_r : 2   |  acc_en -> o : 2
-// => issue acc_en at least 2 cycles after the last ld_*.
-//
-// Guard bits: W = 2N+8 leaves 8 guard bits, i.e. up to 256 worst-case products
-// can be accumulated before the internal accumulator itself can wrap.
-//-----------------------------------------------------------------------------
+
 module mac_core #(
-    parameter IB    = 8,            // integer bits (incl. sign)
-    parameter FB    = 8,            // fraction bits (must be >= 1 when ROUND=1)
-    parameter ROUND = 0,            // 1 = round-to-nearest, 0 = floor
-    parameter SAT   = 1,            // 1 = saturate output, 0 = wrap
-    parameter N     = IB + FB,      // operand / output width
-    parameter W     = 2*N + 8       // accumulator width
+    parameter IB    = 8,            
+    parameter FB    = 8,            
+    parameter ROUND = 0,          
+    parameter SAT   = 1,            
+    parameter N     = IB + FB,     
+    parameter W     = 2*N + 8       
 )(
     input  wire                 clk,
-    input  wire                 rst,      // sync, clears operands + accumulator
-    input  wire                 clr,      // sync, clears accumulator only
-    input  wire                 ld_a,     // latch a_in
-    input  wire                 ld_b,     // latch b_in
-    input  wire                 acc_en,   // acc <= acc + a_r*b_r
+    input  wire                 rst,      
+    input  wire                 clr,      
+    input  wire                 ld_a,     
+    input  wire                 ld_b,     
+    input  wire                 acc_en, 
     input  wire signed [N-1:0]  a_in,
     input  wire signed [N-1:0]  b_in,
-    output wire signed [N-1:0]  a_q,      // latched operands (for display)
+    output wire signed [N-1:0]  a_q,      
     output wire signed [N-1:0]  b_q,
-    output wire signed [N-1:0]  o,        // accumulator, Q(IB.FB), rounded/saturated
-    output wire                 ovf       // 1 when o is clamped / wrapped
+    output wire signed [N-1:0]  o,      
+    output wire                 ovf       
 );
 
-    // power-up values (FPGA INIT) so the design is deterministic without reset
+  
     reg signed [N-1:0]   a_r    = {N{1'b0}};
     reg signed [N-1:0]   b_r    = {N{1'b0}};
     reg signed [2*N-1:0] prod_r = {(2*N){1'b0}};
@@ -141,7 +99,7 @@ module mac_core #(
     reg signed [N-1:0]   o_r    = {N{1'b0}};
     reg                  ovf_r  = 1'b0;
 
-    // ---- stage 0 : operand registers -------------------------------------
+  
     always @(posedge clk) begin
         if (rst) begin
             a_r <= {N{1'b0}};
@@ -152,17 +110,17 @@ module mac_core #(
         end
     end
 
-    // ---- stage 1 : product register (DSP48E1 multiplier + MREG) ------------
+  
     always @(posedge clk)
         prod_r <= a_r * b_r;
 
-    // ---- stage 2 : accumulator --------------------------------------------
+    
     always @(posedge clk) begin
         if (rst | clr)   acc <= {W{1'b0}};
-        else if (acc_en) acc <= acc + prod_r;      // signed + signed: sign-extends
+        else if (acc_en) acc <= acc + prod_r;     
     end
 
-    // ---- stage 3 : drop FB fraction bits, round, saturate -----------------
+  
     localparam signed [W-1:0] MAXV = ({{(W-1){1'b0}}, 1'b1} << (N-1)) - 1;
     localparam signed [W-1:0] MINV = -MAXV - 1;
     localparam signed [N-1:0] MAXN = {1'b0, {(N-1){1'b1}}};
@@ -187,13 +145,6 @@ module mac_core #(
 
 endmodule
 
-//-----------------------------------------------------------------------------
-// btn_cond : 2-FF synchroniser + counter debouncer + one-clock rising-edge pulse
-//   level : debounced, synchronous version of the input (1 = "pressed")
-//   pulse : single clk-wide pulse when level goes 0 -> 1
-// ACTIVE_LOW = 1 for inputs that idle high (e.g. CPU_RESETN).
-// DB_CYCLES  : stable time required, in clk cycles (1_000_000 @100 MHz = 10 ms)
-//-----------------------------------------------------------------------------
 module btn_cond #(
     parameter DB_CYCLES  = 1_000_000,
     parameter ACTIVE_LOW = 0
@@ -229,13 +180,6 @@ module btn_cond #(
     assign pulse = state & ~state_d;
 endmodule
 
-//-----------------------------------------------------------------------------
-// seg7_mux : 8-digit multiplexed hex display driver (Nexys A7, common anode)
-//   value : 32-bit word, digit 0 (AN0, rightmost) = value[3:0]
-//   dp    : 1 = light the decimal point on every digit
-//   seg   : {dp, g,f,e,d,c,b,a}, active low      an : active low
-// Refresh ~ 763 Hz frame rate @100 MHz. Outputs are registered.
-//-----------------------------------------------------------------------------
 module seg7_mux (
     input  wire        clk,
     input  wire [31:0] value,
