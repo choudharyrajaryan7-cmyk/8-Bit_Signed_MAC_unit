@@ -1,3 +1,3 @@
-# 8-Bit_Signed_MAC_unit
+# 16-Bit_Signed_MAC_unit
 ## DLD project
 Improving 8-Bit MAC Unit 
