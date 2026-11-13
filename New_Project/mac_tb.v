@@ -1,18 +1,12 @@
 `timescale 1ns / 1ps
-// =============================================================================
-// mac_tb.v : one self-checking testbench for the whole design
-//   Part 1 - mac_core directly (directed + 200 random accumulations)
-//   Part 2 - mac_board_top driven with switches/buttons like a person would
-// Set  mac_tb  as the simulation top.  Prints "ALL PASS" when everything matches.
-// iverilog: iverilog -g2012 -o sim mac_tb.v mac_design.v && vvp sim
-// =============================================================================
+
 module mac_tb;
     localparam IB = 8, FB = 8, N = IB + FB;
     localparam integer MAXI =  (1 << (N-1)) - 1;
     localparam integer MINI = -(1 << (N-1));
 
     reg clk = 0;
-    always #5 clk = ~clk;                        // 100 MHz
+    always #5 clk = ~clk;                        
 
     integer fails = 0, k;
 
@@ -21,7 +15,7 @@ module mac_tb;
         $dumpvars(0, mac_tb);
     end
 
-    // ------------------------------------------------------------------ DUT 1
+    
     reg          rst = 0, clr = 0, ld_a = 0, ld_b = 0, acc_en = 0;
     reg  [N-1:0] a_in = 0, b_in = 0;
     wire [N-1:0] a_q, b_q, o;
@@ -32,22 +26,21 @@ module mac_tb;
         .clk(clk), .rst(rst), .clr(clr), .ld_a(ld_a), .ld_b(ld_b), .acc_en(acc_en),
         .a_in(a_in), .b_in(b_in), .a_q(a_q), .b_q(b_q), .o(o), .ovf(ovf));
 
-    // ------------------------------------------------------------------ DUT 2
     reg         CPU_RESETN = 1, BTNC = 0, BTNL = 0, BTNR = 0, BTNU = 0;
     reg  [15:0] SW = 0;
     wire [15:0] LED;
     wire [7:0]  SEG, AN;
 
-    mac_board_top #(.DB_CYCLES(4)) dut_top (      // short debounce for simulation
+    mac_board_top #(.DB_CYCLES(4)) dut_top (     
         .CLK100MHZ(clk), .CPU_RESETN(CPU_RESETN),
         .BTNC(BTNC), .BTNL(BTNL), .BTNR(BTNR), .BTNU(BTNU),
         .SW(SW), .LED(LED), .SEG(SEG), .AN(AN));
 
-    // ------------------------------------------------------------ helpers
-    function [N-1:0] q(input real x);            // real -> Q8.8 word
+  
+    function [N-1:0] q(input real x);          
         q = $rtoi(x * (1 << FB));
     endfunction
-    function real r(input [N-1:0] w);            // Q8.8 word -> real
+    function real r(input [N-1:0] w);           
         r = $itor($signed(w)) / (1 << FB);
     endfunction
 
@@ -61,15 +54,15 @@ module mac_tb;
         end
     endtask
 
-    // load -> multiply -> accumulate -> output register
+  
     task step(input [N-1:0] a, input [N-1:0] b);
         begin
             @(negedge clk); a_in = a; b_in = b; ld_a = 1; ld_b = 1;
             @(negedge clk); ld_a = 0; ld_b = 0;
-            repeat (2) @(negedge clk);           // operand regs -> product reg
+            repeat (2) @(negedge clk);         
             acc_en = 1;
             @(negedge clk); acc_en = 0;
-            repeat (2) @(negedge clk);           // accumulator -> output reg
+            repeat (2) @(negedge clk);           
             total = total + $signed(a) * $signed(b);
         end
     endtask
@@ -104,7 +97,7 @@ module mac_tb;
         end
     endtask
 
-    // ------------------------------------------------------------ tests
+  
     initial begin
         $display("---- Part 1: mac_core ----");
         do_reset;
@@ -148,18 +141,18 @@ module mac_tb;
         CPU_RESETN = 0; idle(20); CPU_RESETN = 1; idle(20);
         expect_led("after reset", 16'h0000);
 
-        SW = 16'h0300; tapL;                     // A = 3.0
-        SW = 16'h0180; tapR;                     // B = 1.5
+        SW = 16'h0300; tapL;                  
+        SW = 16'h0180; tapR;                  
         tapC; expect_led("3.0*1.5 = 4.5",          16'h0480);
         tapC; expect_led("accumulate again = 9.0", 16'h0900);
         tapU; expect_led("BTNU clears",            16'h0000);
 
-        SW = 16'hFE00; tapL;                     // A = -2.0
-        SW = 16'h0180; tapR;                     // B = 1.5
+        SW = 16'hFE00; tapL;                   
+        SW = 16'h0180; tapR;                   
         tapC; expect_led("-2.0*1.5 = -3.0",        16'hFD00);
 
         tapU;
-        SW = 16'h6400; tapL; tapR;               // 100.0 * 100.0 -> saturate
+        SW = 16'h6400; tapL; tapR;           
         tapC; expect_led("saturate",               16'h7FFF);
 
         CPU_RESETN = 0; idle(20); CPU_RESETN = 1; idle(20);
